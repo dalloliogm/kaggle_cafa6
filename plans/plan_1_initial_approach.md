@@ -1,4 +1,4 @@
-# Plan 1: Initial Approach for CAFA6 Protein Function Prediction
+pl# Plan 1: Initial Approach for CAFA6 Protein Function Prediction
 
 ## Overview
 Develop a solution for the CAFA6 Kaggle challenge using embeddings and similarity-based methods. The goal is to predict Gene Ontology (GO) terms for proteins based on amino acid sequences, submitted as a single Kaggle notebook.
