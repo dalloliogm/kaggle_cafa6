@@ -1,0 +1,19 @@
+[project]
+name = "cafa6"
+version = "0.1.0"
+description = "CAFA6 Protein Function Prediction"
+requires-python = ">=3.8"
+dependencies = [
+    "transformers",
+    "torch",
+    "networkx",
+    "obonet",
+    "biopython",
+    "scikit-learn",
+    "pandas",
+    "numpy",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
