@@ -31,6 +31,8 @@ from pydantic import BaseModel
 # Suppress warnings for cleaner notebook output
 warnings.filterwarnings('ignore')
 
+import contextlib
+
 @contextlib.contextmanager
 def _set_default_tensor_type(dtype: torch.dtype):
     """Sets the default torch dtype to the given dtype."""
@@ -194,11 +196,13 @@ Ensure each section provides distinct, non-redundant information.""",
 
             # Extract definition
             if hasattr(go_class, 'IAO_0000115') and go_class.IAO_0000115:
-                metadata['definition'] = str(go_class.IAO_0000115[0]) if isinstance(go_class.IAO_0000115, list) else str(go_class.IAO_0000115)
+                definition_value = go_class.IAO_0000115[0] if isinstance(go_class.IAO_0000115, list) else go_class.IAO_0000115
+                metadata['definition'] = str(definition_value)
 
             # Extract synonyms
             if hasattr(go_class, 'hasExactSynonym') and go_class.hasExactSynonym:
-                metadata['synonyms'] = [str(syn) for syn in go_class.hasExactSynonym]
+                synonyms = go_class.hasExactSynonym
+                metadata['synonyms'] = [str(syn) for syn in synonyms]
 
             # Extract namespace
             if hasattr(go_class, 'namespace') and go_class.namespace:
@@ -206,15 +210,18 @@ Ensure each section provides distinct, non-redundant information.""",
 
             # Extract comment
             if hasattr(go_class, 'comment') and go_class.comment:
-                metadata['comment'] = str(go_class.comment[0]) if isinstance(go_class.comment, list) else str(go_class.comment)
+                comment_value = go_class.comment[0] if isinstance(go_class.comment, list) else go_class.comment
+                metadata['comment'] = str(comment_value)
 
             # Extract parent classes
             if hasattr(go_class, 'is_a'):
-                metadata['parents'] = [str(parent.name) for parent in go_class.is_a if hasattr(parent, 'name')]
+                parents = go_class.is_a
+                metadata['parents'] = [str(parent.name) for parent in parents if hasattr(parent, 'name')]
 
             # Extract cross-references (db_xref property)
             if hasattr(go_class, 'db_xref') and go_class.db_xref:
-                metadata['cross_references'] = [str(xref) for xref in go_class.db_xref]
+                xrefs = go_class.db_xref
+                metadata['cross_references'] = [str(xref) for xref in xrefs]
 
         except Exception as e:
             self.logger.warning(f"Error extracting metadata for {getattr(go_class, 'name', 'Unknown')}: {e}")
@@ -520,7 +527,7 @@ Ensure each section provides distinct, non-redundant information.""",
 
 # Convenience functions for easy usage
 def extract_go_embeddings(
-    obo_path: str = "/kaggle/input/cafa-6-protein-function-prediction/Train/go-basic.obo",
+    obo_path: str = "data/go-basic.obo",
     output_dir: str = "./output_simple",
     max_terms: Optional[int] = None,
     llm_model: Any = None,
