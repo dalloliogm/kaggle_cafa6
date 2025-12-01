@@ -11,21 +11,32 @@ Key features:
 - Works seamlessly in Jupyter notebooks
 - Simple, readable code
 - All the same enhanced prompting and metadata extraction
+- Integrated Gemma LLM support for description generation
 """
 
 import json
 import logging
 import warnings
+import contextlib
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
 import numpy as np
+import torch
 from owlready2 import get_ontology
 from pydantic import BaseModel
 
 # Suppress warnings for cleaner notebook output
 warnings.filterwarnings('ignore')
+
+@contextlib.contextmanager
+def _set_default_tensor_type(dtype: torch.dtype):
+    """Sets the default torch dtype to the given dtype."""
+    torch.set_default_dtype(dtype)
+    yield
+    torch.set_default_dtype(torch.float)
 
 
 class SimpleGOExtractor:
@@ -40,7 +51,9 @@ class SimpleGOExtractor:
         embedding_model_name: str = "nomic-embed-text",
         embedding_provider: str = "ollama",
         output_dir: str = "./output",
-        device: str = "cpu"
+        device: str = "cpu",
+        gemma_variant: str = "2b-it",
+        gemma_weights_dir: Optional[str] = None
     ):
         self.llm_model = llm_model
         self.embedding_model_name = embedding_model_name
@@ -48,20 +61,26 @@ class SimpleGOExtractor:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         self.device = device
-        
+        self.gemma_variant = gemma_variant
+        self.gemma_weights_dir = gemma_weights_dir
+
         # Setup logging
         logging.basicConfig(level=logging.INFO, format='%(message)s')
         self.logger = logging.getLogger(__name__)
-        
+
         # GO namespace descriptions for context
         self.namespace_descriptions = {
             'molecular_function': 'Molecular functions are the elemental activities of a gene product at the molecular level',
             'biological_process': 'Biological processes represent specific objectives that the organism is genetically programmed to achieve',
             'cellular_component': 'Cellular components are the places in the cell where a gene product is active'
         }
-        
+
         # Prompt templates for different aspects
         self.prompt_templates = self._create_prompt_templates()
+
+        # Initialize Gemma model if weights directory is provided
+        if self.gemma_weights_dir:
+            self._initialize_gemma_model()
     
     def _create_prompt_templates(self) -> Dict[str, str]:
         """Create structured prompt templates for consistent ML-focused descriptions."""
@@ -106,13 +125,48 @@ Ensure each section provides distinct, non-redundant information.""",
             }
         }
     
+    def _initialize_gemma_model(self):
+        """Initialize Gemma model for description generation."""
+        try:
+            # Import Gemma modules
+            from gemma.config import GemmaConfig, get_config_for_7b, get_config_for_2b
+            from gemma.model import GemmaForCausalLM
+            from gemma.tokenizer import Tokenizer
+
+            # Set up device
+            self.gemma_device = torch.device(self.device)
+
+            # Get model configuration
+            if "2b" in self.gemma_variant:
+                model_config = get_config_for_2b()
+            else:
+                model_config = get_config_for_7b()
+
+            model_config.tokenizer = os.path.join(self.gemma_weights_dir, "tokenizer.model")
+
+            # Load model with context manager for dtype handling
+            with _set_default_tensor_type(model_config.get_dtype()):
+                self.gemma_model = GemmaForCausalLM(model_config)
+                ckpt_path = os.path.join(self.gemma_weights_dir, f'gemma-{self.gemma_variant}.ckpt')
+                self.gemma_model.load_weights(ckpt_path)
+                self.gemma_model = self.gemma_model.to(self.gemma_device).eval()
+
+            self.logger.info(f"Gemma model {self.gemma_variant} initialized successfully")
+
+        except ImportError:
+            self.logger.warning("Gemma modules not available. Using fallback LLM or OBO definitions.")
+            self.gemma_model = None
+        except Exception as e:
+            self.logger.error(f"Error initializing Gemma model: {e}")
+            self.gemma_model = None
+
     def _extract_go_metadata(self, go_class) -> Dict[str, Any]:
         """
         Extract comprehensive metadata from a GO class.
-        
+
         Args:
             go_class: Owlready2 GO class object
-            
+
         Returns:
             Dictionary with extracted metadata
         """
@@ -127,44 +181,44 @@ Ensure each section provides distinct, non-redundant information.""",
             'cross_references': [],
             'comment': ''
         }
-        
+
         try:
             # Extract GO ID from IRI
             if hasattr(go_class, 'iri') and go_class.iri:
                 iri_parts = go_class.iri.split('/')
                 metadata['go_id'] = iri_parts[-1] if iri_parts else str(go_class.iri)
-            
+
             # Extract label
             if hasattr(go_class, 'label') and go_class.label:
                 metadata['label'] = go_class.label[0] if isinstance(go_class.label, list) else str(go_class.label)
-            
+
             # Extract definition
             if hasattr(go_class, 'IAO_0000115') and go_class.IAO_0000115:
                 metadata['definition'] = str(go_class.IAO_0000115[0]) if isinstance(go_class.IAO_0000115, list) else str(go_class.IAO_0000115)
-            
+
             # Extract synonyms
             if hasattr(go_class, 'hasExactSynonym') and go_class.hasExactSynonym:
                 metadata['synonyms'] = [str(syn) for syn in go_class.hasExactSynonym]
-            
+
             # Extract namespace
             if hasattr(go_class, 'namespace') and go_class.namespace:
                 metadata['namespace'] = str(go_class.namespace)
-            
+
             # Extract comment
             if hasattr(go_class, 'comment') and go_class.comment:
                 metadata['comment'] = str(go_class.comment[0]) if isinstance(go_class.comment, list) else str(go_class.comment)
-            
+
             # Extract parent classes
             if hasattr(go_class, 'is_a'):
                 metadata['parents'] = [str(parent.name) for parent in go_class.is_a if hasattr(parent, 'name')]
-            
+
             # Extract cross-references (db_xref property)
             if hasattr(go_class, 'db_xref') and go_class.db_xref:
                 metadata['cross_references'] = [str(xref) for xref in go_class.db_xref]
-            
+
         except Exception as e:
             self.logger.warning(f"Error extracting metadata for {getattr(go_class, 'name', 'Unknown')}: {e}")
-        
+
         return metadata
     
     def load_go_data(self, obo_path: str) -> pd.DataFrame:
@@ -273,30 +327,57 @@ Ensure each section provides distinct, non-redundant information.""",
     def generate_description(self, metadata: Dict[str, Any]) -> str:
         """
         Generate ML-optimized description using structured prompting.
-        
+
         Args:
             metadata: GO term metadata dictionary
-            
+
         Returns:
             Generated description
         """
-        if self.llm_model is None:
+        if self.llm_model is None and not hasattr(self, 'gemma_model'):
             # Use OBO definition as fallback
             return f"GO term {metadata['go_id']}: {metadata['label']}. {metadata['definition']}"
-        
+
         try:
             # Create enhanced prompt
             prompt = self._create_ml_optimized_prompt(metadata)
-            
+
             # Generate description using LLM
-            if hasattr(self.llm_model, 'generate'):
+            if hasattr(self, 'gemma_model') and self.gemma_model is not None:
+                # Use Gemma model
+                USER_CHAT_TEMPLATE = "<start_of_turn>user\n{prompt}<end_of_turn>\n"
+                MODEL_CHAT_TEMPLATE = "<start_of_turn>model\n{prompt}<end_of_turn>\n"
+
+                # Format prompt for Gemma
+                gemma_prompt = (
+                    USER_CHAT_TEMPLATE.format(prompt=prompt)
+                    + "<start_of_turn>model\n"
+                )
+
+                result = self.gemma_model.generate(
+                    gemma_prompt,
+                    device=self.gemma_device,
+                    output_len=500
+                )
+                response_text = result.strip()
+
+                # Clean up Gemma-specific formatting
+                if response_text.startswith("<start_of_turn>model\n"):
+                    response_text = response_text[len("<start_of_turn>model\n"):]
+                if response_text.endswith("<end_of_turn>"):
+                    response_text = response_text[:-len("<end_of_turn>")]
+
+                response_text = response_text.strip()
+
+            elif hasattr(self.llm_model, 'generate'):
+                # Use generic LLM
                 result = self.llm_model.generate(prompt, device=self.device, output_len=500)
                 response_text = result.strip()
             else:
                 response_text = f"Enhanced description for {metadata['label']}"
-            
+
             return response_text
-            
+
         except Exception as e:
             self.logger.error(f"Error generating description for {metadata['go_id']}: {e}")
             # Use OBO definition as fallback
@@ -443,44 +524,50 @@ def extract_go_embeddings(
     output_dir: str = "./output_simple",
     max_terms: Optional[int] = None,
     llm_model: Any = None,
-    embedding_model_name: str = "nomic-embed-text"
+    embedding_model_name: str = "nomic-embed-text",
+    gemma_variant: str = "2b-it",
+    gemma_weights_dir: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Main function for GO embeddings extraction - simple synchronous version.
     Perfect for Jupyter notebooks and straightforward usage.
-    
+
     Args:
         obo_path: Path to GO OBO file
         output_dir: Directory to save results
         max_terms: Maximum terms to process
         llm_model: LLM for description generation (optional)
         embedding_model_name: Name of embedding model
-        
+        gemma_variant: Gemma model variant (e.g., "2b-it", "7b-it")
+        gemma_weights_dir: Path to Gemma model weights directory
+
     Returns:
         Dictionary with embeddings and metadata
     """
     print("🚀 Starting Simple GO Embeddings Extraction")
     print("=" * 50)
     print("✨ Features: No async complexity + Enhanced prompting")
-    
+
     extractor = SimpleGOExtractor(
         llm_model=llm_model,
         embedding_model_name=embedding_model_name,
-        output_dir=output_dir
+        output_dir=output_dir,
+        gemma_variant=gemma_variant,
+        gemma_weights_dir=gemma_weights_dir
     )
-    
+
     results = extractor.extract_embeddings(obo_path, max_terms)
     extractor.save_results(results)
-    
+
     print(f"\n✅ Extraction complete!")
     print(f"📊 Processed {results['metadata']['total_terms']} GO terms")
     print(f"🔢 Embedding dimensions: {results['metadata']['embedding_dim']}")
-    
+
     namespace_dist = results['metadata']['namespace_distribution']
     print(f"📈 Namespace distribution:")
     for namespace, count in namespace_dist.items():
         print(f"   {namespace}: {count} terms")
-    
+
     return results
 
 
@@ -559,8 +646,12 @@ def extract_simple_comparison(obo_path: str, max_terms: Optional[int] = None) ->
 # Simple extraction (no LLM)
 results = extract_go_embeddings(max_terms=100)
 
-# With LLM for enhanced descriptions
-# results = extract_go_embeddings(llm_model=gemma_model, max_terms=100)
+# With Gemma LLM for enhanced descriptions
+# results = extract_go_embeddings(
+#     gemma_variant="2b-it",
+#     gemma_weights_dir="/kaggle/input/gemma/pytorch/1.1-2b-it/1/",
+#     max_terms=100
+# )
 
 # Compare with simple approach
 simple_results = extract_simple_comparison(obo_path, max_terms=100)
