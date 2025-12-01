@@ -240,7 +240,49 @@ Ensure each section provides distinct, non-redundant information.""",
         """
         self.logger.info(f"Loading GO data from {obo_path}")
         
-        onto = get_ontology(str(obo_path)).load()
+        try:
+            onto = get_ontology(str(obo_path)).load()
+        except Exception as e:
+            self.logger.error(f"Error loading OBO file with owlready2: {e}")
+            self.logger.info("Trying alternative OBO parsing with obonet...")
+            import obonet
+            go_graph = obonet.read_obo(str(obo_path))
+            # Create a simple in-memory ontology structure that mimics owlready2 classes
+            from collections import namedtuple
+            GOClass = namedtuple('GOClass', ['iri', 'label', 'IAO_0000115', 'namespace', 'hasExactSynonym', 'is_a', 'db_xref', 'comment', 'is_obsolete'])
+            # Create mock classes for each GO term
+            mock_classes = []
+            for node_id, node_data in go_graph.nodes(data=True):
+                # Create a mock GO class
+                go_id = node_id
+                label = [node_data.get('name', '')] if node_data.get('name') else ['']
+                definition = [node_data.get('def', '')] if node_data.get('def') else ['']
+                namespace = node_data.get('namespace', '')
+                synonyms = node_data.get('synonyms', [])
+                parents = list(go_graph.predecessors(node_id))
+                xrefs = node_data.get('xrefs', [])
+                comment = node_data.get('comment', '')
+                is_obsolete = node_data.get('is_obsolete', False)
+
+                mock_class = GOClass(
+                    iri=f"http://purl.obolibrary.org/obo/{go_id}",
+                    label=label,
+                    IAO_0000115=definition,
+                    namespace=namespace,
+                    hasExactSynonym=synonyms,
+                    is_a=parents,
+                    db_xref=xrefs,
+                    comment=comment,
+                    is_obsolete=is_obsolete
+                )
+                mock_classes.append(mock_class)
+
+            # Create a mock ontology object
+            class MockOntology:
+                def classes(self):
+                    return mock_classes
+
+            onto = MockOntology()
         go_data = []
         
         processed_count = 0
@@ -504,8 +546,7 @@ Ensure each section provides distinct, non-redundant information.""",
             descriptions=np.array(results['descriptions'], dtype=object),
             obo_definitions=np.array(results['obo_definitions'], dtype=object),
             synonyms=np.array(results['synonyms'], dtype=object),
-            namespaces=np.array(results['namespaces'], dtype=object),
-            **results
+            namespaces=np.array(results['namespaces'], dtype=object)
         )
         
         # Save metadata as JSON

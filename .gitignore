@@ -3,3 +3,9 @@ data/
 Test/
 Train/
 IA.tsv
+__pycache__/simple_go_extractor.cpython-39.pyc
+output_simple/go_embeddings_metadata.json
+.gitignore
+output_simple/go_embeddings.csv
+output_simple/go_embeddings_go_data.csv
+output_simple/go_embeddings.npz
