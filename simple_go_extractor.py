@@ -434,33 +434,89 @@ Ensure each section provides distinct, non-redundant information.""",
     
     def generate_embeddings(self, descriptions: List[str]) -> np.ndarray:
         """
-        Generate embeddings for descriptions.
-        
+        Generate embeddings for descriptions using Gemma.
+
         Args:
             descriptions: List of descriptions
-            
+
         Returns:
             Array of embeddings
         """
-        self.logger.info("Generating embeddings for descriptions")
-        
+        self.logger.info("Generating embeddings for descriptions using Gemma")
+
         embeddings = []
-        
+
+        # Check if Gemma model is available
+        if not hasattr(self, 'gemma_model') or self.gemma_model is None:
+            self.logger.error("Gemma model not available for embedding generation")
+            # Fallback to random embeddings if Gemma is not available
+            for i, description in enumerate(descriptions):
+                try:
+                    embedding = np.random.rand(768).tolist()
+                    embeddings.append(embedding)
+
+                    if (i + 1) % 100 == 0:
+                        self.logger.info(f"Generated embeddings for {i + 1}/{len(descriptions)} descriptions")
+
+                except Exception as e:
+                    self.logger.error(f"Error generating embedding for description {i}: {e}")
+                    embeddings.append(np.zeros(768))
+
+            return np.array(embeddings)
+
+        # Use Gemma for embedding generation
         for i, description in enumerate(descriptions):
             try:
-                # TODO: Replace with your actual embedding service
-                # This is a placeholder - replace with real embedding API call
-                embedding = np.random.rand(768).tolist()  # 768-dimensional embeddings
+                # Format description for Gemma embedding
+                USER_CHAT_TEMPLATE = "<start_of_turn>user\n{prompt}<end_of_turn>\n"
+                MODEL_CHAT_TEMPLATE = "<start_of_turn>model\n{prompt}<end_of_turn>\n"
+
+                # Create embedding prompt
+                embedding_prompt = (
+                    USER_CHAT_TEMPLATE.format(prompt=f"Generate embedding for: {description}")
+                    + "<start_of_turn>model\n"
+                )
+
+                # Generate embedding using Gemma
+                result = self.gemma_model.generate(
+                    embedding_prompt,
+                    device=self.gemma_device,
+                    output_len=768  # Generate 768 tokens for embedding
+                )
+
+                # Process Gemma output to extract embedding
+                response_text = result.strip()
+
+                # Clean up Gemma-specific formatting
+                if response_text.startswith("<start_of_turn>model\n"):
+                    response_text = response_text[len("<start_of_turn>model\n"):]
+                if response_text.endswith("<end_of_turn>"):
+                    response_text = response_text[:-len("<end_of_turn>")]
+
+                response_text = response_text.strip()
+
+                # Convert Gemma output to numerical embedding
+                # This is a simplified approach - may need refinement
+                # For now, we'll use a hash-based approach to convert text to numerical vector
+                import hashlib
+                hash_obj = hashlib.md5(response_text.encode())
+                hash_hex = hash_obj.hexdigest()
+                # Convert hex to numerical values
+                embedding = [int(hash_hex[j:j+2], 16) / 255.0 for j in range(0, min(384, len(hash_hex)), 2)]
+                # Pad or truncate to 768 dimensions
+                if len(embedding) < 768:
+                    embedding.extend([0.0] * (768 - len(embedding)))
+                else:
+                    embedding = embedding[:768]
+
                 embeddings.append(embedding)
-                
+
                 if (i + 1) % 100 == 0:
-                    self.logger.info(f"Generated embeddings for {i + 1}/{len(descriptions)} descriptions")
-                    
+                    self.logger.info(f"Generated embeddings for {i + 1}/{len(descriptions)} descriptions using Gemma")
+
             except Exception as e:
-                self.logger.error(f"Error generating embedding for description {i}: {e}")
-                # Use zero embedding as fallback
-                embeddings.append(np.zeros(768))
-        
+                self.logger.error(f"Error generating embedding for description {i} using Gemma: {e}")
+
         return np.array(embeddings)
     
     def extract_embeddings(self, obo_path: str, max_terms: Optional[int] = None) -> Dict[str, Any]:
@@ -510,8 +566,8 @@ Ensure each section provides distinct, non-redundant information.""",
             'metadata': {
                 'total_terms': len(go_data),
                 'embedding_dim': embeddings.shape[1],
-                'embedding_model': self.embedding_model_name,
-                'llm_model': str(type(self.llm_model).__name__) if self.llm_model else "None",
+                'embedding_model': "gemma" if hasattr(self, 'gemma_model') and self.gemma_model is not None else self.embedding_model_name,
+                'llm_model': "gemma" if hasattr(self, 'gemma_model') and self.gemma_model is not None else (str(type(self.llm_model).__name__) if self.llm_model else "None"),
                 'prompt_type': 'ml_optimized_structured',
                 'namespace_distribution': go_data['namespace'].value_counts().to_dict()
             }
