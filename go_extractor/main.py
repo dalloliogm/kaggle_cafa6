@@ -87,32 +87,28 @@ class SimpleGOExtractor:
         return prompt_template
 
     def _initialize_gemma_model(self):
-        """Initialize Gemma model for description generation."""
+        """Initialize Gemma model for description generation using exact Kaggle approach."""
         try:
-            # Import Gemma modules
+            # Import Gemma modules exactly as in working Kaggle code
             from gemma.config import GemmaConfig, get_config_for_7b, get_config_for_2b
             from gemma.model import GemmaForCausalLM
             from gemma.tokenizer import Tokenizer
 
-            # Set up device
+            # Set up device exactly as in working Kaggle code
             self.gemma_device = torch.device(self.device)
 
-            # Get model configuration
-            if "2b" in self.gemma_variant:
-                model_config = get_config_for_2b()
-            else:
-                model_config = get_config_for_7b()
-
+            # Get model configuration exactly as in working Kaggle code
+            model_config = get_config_for_2b() if "2b" in self.gemma_variant else get_config_for_7b()
             model_config.tokenizer = os.path.join(self.gemma_weights_dir, "tokenizer.model")
 
-            # Load model with context manager for dtype handling
+            # Load model with context manager exactly as in working Kaggle code
             with _set_default_tensor_type(model_config.get_dtype()):
                 self.gemma_model = GemmaForCausalLM(model_config)
                 ckpt_path = os.path.join(self.gemma_weights_dir, f'gemma-{self.gemma_variant}.ckpt')
                 self.gemma_model.load_weights(ckpt_path)
                 self.gemma_model = self.gemma_model.to(self.gemma_device).eval()
 
-            logger.info(f"Gemma model {self.gemma_variant} initialized successfully")
+            logger.info(f"Gemma model {self.gemma_variant} initialized successfully using Kaggle approach")
 
         except ImportError:
             logger.warning("Gemma modules not available. Using fallback LLM or OBO definitions.")
@@ -265,7 +261,7 @@ class SimpleGOExtractor:
                 go_data.append(metadata)
                 processed_count += 1
 
-                if processed_count % 100 == 0:
+                if processed_count % 1000 == 0:
                     logger.info(f"Processed {processed_count} GO terms")
 
         df = pd.DataFrame(go_data)
