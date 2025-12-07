@@ -3,7 +3,6 @@ Convenience functions for GO extractor.
 """
 
 from typing import Dict, Any, Optional
-from .main import SimpleGOExtractor
 
 def extract_go_embeddings(
     obo_path: str = "data/go-basic.obo",

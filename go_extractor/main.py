@@ -19,9 +19,25 @@ from pydantic import BaseModel
 # Suppress warnings for cleaner notebook output
 warnings.filterwarnings('ignore')
 
-# Import from local modules
-from go_extractor.prompt_templates import prompt_template
-from go_extractor.utils import _set_default_tensor_type
+# Import from local modules with try/except for Kaggle compatibility
+try:
+    from go_extractor.prompt_templates import prompt_template
+    from go_extractor.utils import _set_default_tensor_type
+except ImportError:
+    # Fallback for Kaggle notebook environment - only provide utils
+    import contextlib
+    import torch
+
+    @contextlib.contextmanager
+    def _set_default_tensor_type(dtype: torch.dtype):
+        """Sets the default torch dtype to the given dtype."""
+        torch.set_default_dtype(dtype)
+        yield
+        torch.set_default_dtype(torch.float)
+
+    # Note: prompt_template will be provided manually in Kaggle notebook
+    # This allows keeping the template in a separate file for local development
+    # while still working in Kaggle when the template is pasted into a cell
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -326,9 +342,9 @@ class SimpleGOExtractor:
         Returns:
             Generated description
         """
-        if self.llm_model is None and not hasattr(self, 'gemma_model'):
-            # Use OBO definition as fallback
-            return f"GO term {metadata['go_id']}: {metadata['label']}. {metadata['definition']}"
+        # Check if Gemma model is available
+        if not hasattr(self, 'gemma_model') or self.gemma_model is None:
+            raise ValueError("Gemma model not available for description generation. Please provide gemma_weights_dir.")
 
         try:
             # Create enhanced prompt
@@ -372,8 +388,7 @@ class SimpleGOExtractor:
 
         except Exception as e:
             logger.error(f"Error generating description for {metadata['go_id']}: {e}")
-            # Use OBO definition as fallback
-            return f"GO term {metadata['go_id']}: {metadata['label']}. {metadata['definition']}"
+            raise  # Re-raise the exception to fail fast
 
     def generate_embeddings(self, descriptions: List[str]) -> np.ndarray:
         """
@@ -386,6 +401,10 @@ class SimpleGOExtractor:
             Array of embeddings
         """
         logger.info("Generating embeddings for descriptions using Gemma")
+
+        # Check if Gemma model is available
+        if not hasattr(self, 'gemma_model') or self.gemma_model is None:
+            raise ValueError("Gemma model not available for embedding generation. Please provide gemma_weights_dir.")
 
         embeddings = []
 
