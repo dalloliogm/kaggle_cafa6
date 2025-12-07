@@ -66,7 +66,7 @@ class SimpleGOExtractor:
         self.output_dir.mkdir(exist_ok=True)
         self.device = device
         self.gemma_variant = gemma_variant
-        self.gemma_weights_dir = gemma_weights_dir
+        self.gemma_weights_dir = gemma_weights_dir or "/kaggle/input/gemma/pytorch/1.1-2b-it/1/"
 
         # GO namespace descriptions for context
         self.namespace_descriptions = {
@@ -455,7 +455,7 @@ class SimpleGOExtractor:
 
                 embeddings.append(embedding)
 
-                if (i + 1) % 100 == 0:
+                if (i + 1) % 1000 == 0:
                     logger.info(f"Generated embeddings for {i + 1}/{len(descriptions)} descriptions using Gemma")
 
             except Exception as e:
@@ -492,7 +492,7 @@ class SimpleGOExtractor:
             description = self.generate_description(row.to_dict())
             descriptions.append(description)
 
-            if (idx + 1) % 100 == 0:
+            if (idx + 1) % 1000 == 0:
                 logger.info(f"Generated descriptions for {idx + 1}/{len(go_data)} terms")
 
         # Generate embeddings
