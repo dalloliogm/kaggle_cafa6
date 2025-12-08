@@ -66,7 +66,7 @@ class SimpleGOExtractor:
         self.output_dir.mkdir(exist_ok=True)
         self.device = device
         self.gemma_variant = gemma_variant
-        self.gemma_weights_dir = gemma_weights_dir or "/kaggle/input/gemma/pytorch/1.1-2b-it/1/"
+        self.gemma_weights_dir = gemma_weights_dir or "/kaggle/input/gemma/transformers/1.1-2b-it/1/"
 
         # GO namespace descriptions for context
         self.namespace_descriptions = {
@@ -87,35 +87,36 @@ class SimpleGOExtractor:
         return prompt_template
 
     def _initialize_gemma_model(self):
-        """Initialize Gemma model for description generation using exact Kaggle approach."""
+        """Initialize Gemma model for description generation using transformers approach."""
         try:
-            # Import Gemma modules exactly as in working Kaggle code
-            from gemma.config import GemmaConfig, get_config_for_7b, get_config_for_2b
-            from gemma.model import GemmaForCausalLM
-            from gemma.tokenizer import Tokenizer
+            # Import transformers modules for Gemma
+            from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
-            # Set up device exactly as in working Kaggle code
+            # Set up device
             self.gemma_device = torch.device(self.device)
 
-            # Get model configuration exactly as in working Kaggle code
-            model_config = get_config_for_2b() if "2b" in self.gemma_variant else get_config_for_7b()
-            model_config.tokenizer = os.path.join(self.gemma_weights_dir, "tokenizer.model")
+            # Configure quantization for memory efficiency
+            quantization_config = BitsAndBytesConfig(load_in_4bit=True)
 
-            # Load model with context manager exactly as in working Kaggle code
-            with _set_default_tensor_type(model_config.get_dtype()):
-                self.gemma_model = GemmaForCausalLM(model_config)
-                ckpt_path = os.path.join(self.gemma_weights_dir, f'gemma-{self.gemma_variant}.ckpt')
-                self.gemma_model.load_weights(ckpt_path)
-                self.gemma_model = self.gemma_model.to(self.gemma_device).eval()
+            # Load tokenizer
+            self.gemma_tokenizer = AutoTokenizer.from_pretrained(self.gemma_weights_dir)
 
-            logger.info(f"Gemma model {self.gemma_variant} initialized successfully using Kaggle approach")
+            # Load model with quantization
+            self.gemma_model = AutoModelForCausalLM.from_pretrained(
+                self.gemma_weights_dir,
+                quantization_config=quantization_config
+            )
+
+            logger.info(f"Gemma model {self.gemma_variant} initialized successfully using transformers")
 
         except ImportError:
-            logger.warning("Gemma modules not available. Using fallback LLM or OBO definitions.")
+            logger.warning("Transformers modules not available. Using fallback LLM or OBO definitions.")
             self.gemma_model = None
+            self.gemma_tokenizer = None
         except Exception as e:
             logger.error(f"Error initializing Gemma model: {e}")
             self.gemma_model = None
+            self.gemma_tokenizer = None
 
     def _extract_go_metadata(self, go_class) -> Dict[str, Any]:
         """
@@ -350,30 +351,11 @@ class SimpleGOExtractor:
             prompt = self._create_ml_optimized_prompt(metadata)
 
             # Generate description using LLM
-            if hasattr(self, 'gemma_model') and self.gemma_model is not None:
-                # Use Gemma model
-                USER_CHAT_TEMPLATE = "<start_of_turn>user\n{prompt}<end_of_turn>\n"
-                MODEL_CHAT_TEMPLATE = "<start_of_turn>model\n{prompt}<end_of_turn>\n"
-
-                # Format prompt for Gemma
-                gemma_prompt = (
-                    USER_CHAT_TEMPLATE.format(prompt=prompt)
-                    + "<start_of_turn>model\n"
-                )
-
-                result = self.gemma_model.generate(
-                    gemma_prompt,
-                    device=self.gemma_device,
-                    output_len=500
-                )
-                response_text = result.strip()
-
-                # Clean up Gemma-specific formatting
-                if response_text.startswith("<start_of_turn>model\n"):
-                    response_text = response_text[len("<start_of_turn>model\n"):]
-                if response_text.endswith("<end_of_turn>"):
-                    response_text = response_text[:-len("<end_of_turn>")]
-
+            if hasattr(self, 'gemma_model') and self.gemma_model is not None and hasattr(self, 'gemma_tokenizer') and self.gemma_tokenizer is not None:
+                # Use transformers-based Gemma model
+                input_ids = self.gemma_tokenizer(prompt, return_tensors="pt").to(self.gemma_device)
+                outputs = self.gemma_model.generate(**input_ids, max_length=500)
+                response_text = self.gemma_tokenizer.decode(outputs[0], skip_special_tokens=True)
                 response_text = response_text.strip()
 
             elif hasattr(self.llm_model, 'generate'):
@@ -410,40 +392,21 @@ class SimpleGOExtractor:
 
         embeddings = []
 
-        # Use Gemma for embedding generation
+        # Use transformers-based Gemma for embedding generation
         for i, description in enumerate(descriptions):
             try:
-                # Format description for Gemma embedding
-                USER_CHAT_TEMPLATE = "<start_of_turn>user\n{prompt}<end_of_turn>\n"
-                MODEL_CHAT_TEMPLATE = "<start_of_turn>model\n{prompt}<end_of_turn>\n"
-
                 # Create embedding prompt
-                embedding_prompt = (
-                    USER_CHAT_TEMPLATE.format(prompt=f"Generate embedding for: {description}")
-                    + "<start_of_turn>model\n"
-                )
+                embedding_prompt = f"Generate embedding for: {description}"
 
-                # Generate embedding using Gemma
-                result = self.gemma_model.generate(
-                    embedding_prompt,
-                    device=self.gemma_device,
-                    output_len=768  # Generate 768 tokens for embedding
-                )
+                # Generate embedding using transformers Gemma
+                input_ids = self.gemma_tokenizer(embedding_prompt, return_tensors="pt").to(self.gemma_device)
+                outputs = self.gemma_model.generate(**input_ids, max_length=768)
 
-                # Process Gemma output to extract embedding
-                response_text = result.strip()
+                # Decode the output
+                response_text = self.gemma_tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
 
-                # Clean up Gemma-specific formatting
-                if response_text.startswith("<start_of_turn>model\n"):
-                    response_text = response_text[len("<start_of_turn>model\n"):]
-                if response_text.endswith("<end_of_turn>"):
-                    response_text = response_text[:-len("<end_of_turn>")]
-
-                response_text = response_text.strip()
-
-                # Convert Gemma output to numerical embedding
+                # Convert output to numerical embedding using hash-based approach
                 # This is a simplified approach - may need refinement
-                # For now, we'll use a hash-based approach to convert text to numerical vector
                 import hashlib
                 hash_obj = hashlib.md5(response_text.encode())
                 hash_hex = hash_obj.hexdigest()

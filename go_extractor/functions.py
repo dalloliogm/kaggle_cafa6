@@ -11,7 +11,7 @@ def extract_go_embeddings(
     llm_model: Any = None,
     embedding_model_name: str = "nomic-embed-text",
     gemma_variant: str = "2b-it",
-    gemma_weights_dir: Optional[str] = "/kaggle/input/gemma/pytorch/1.1-2b-it/1/"
+    gemma_weights_dir: Optional[str] = "/kaggle/input/gemma/transformers/1.1-2b-it/1/"
 ) -> Dict[str, Any]:
     """
     Main function for GO embeddings extraction - simple synchronous version.

@@ -13,10 +13,10 @@ This plan outlines the development of a comprehensive system for extracting Gene
 - **Described** the embedding transformation workflow
 
 ### 2. **Gemma LLM Integration**
-- **Integrated** Gemma 2B-IT model for both description generation and embedding creation
-- **Implemented** proper model initialization using the exact Kaggle-compatible approach
+- **Integrated** Gemma 2B-IT model for both description generation and embedding creation using transformers library
+- **Implemented** proper model initialization using the working Kaggle transformers approach with BitsAndBytesConfig
 - **Added** automatic model initialization (lazy loading) when needed
-- **Configured** default Kaggle paths (`/kaggle/input/gemma/pytorch/1.1-2b-it/1/`)
+- **Configured** default Kaggle paths (`/kaggle/input/gemma/transformers/1.1-2b-it/1/`)
 
 ### 3. **Code Modularization**
 - **Split** the monolithic script into multiple organized files:
@@ -88,7 +88,7 @@ prompt_template = {...}
 from go_extractor import extract_go_embeddings
 results = extract_go_embeddings(
     "/kaggle/input/cafa-6-protein-function-prediction/Train/go-basic.obo",
-    gemma_weights_dir='/kaggle/input/gemma/pytorch/1.1-2b-it/1/',
+    gemma_weights_dir='/kaggle/input/gemma/transformers/1.1-2b-it/1/',
     max_terms=100
 )
 ```
