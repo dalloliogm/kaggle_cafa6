@@ -338,9 +338,12 @@ class SimpleGOExtractor:
         Returns:
             Generated description
         """
-        # Check if Gemma model is available
+        # Check if Gemma model is available, if not try to initialize it
         if not hasattr(self, 'gemma_model') or self.gemma_model is None:
-            raise ValueError("Gemma model not available for description generation. Please provide gemma_weights_dir.")
+            if self.gemma_weights_dir:
+                self._initialize_gemma_model()
+            else:
+                raise ValueError("Gemma model not available for description generation. Please provide gemma_weights_dir.")
 
         try:
             # Create enhanced prompt
@@ -398,9 +401,12 @@ class SimpleGOExtractor:
         """
         logger.info("Generating embeddings for descriptions using Gemma")
 
-        # Check if Gemma model is available
+        # Check if Gemma model is available, if not try to initialize it
         if not hasattr(self, 'gemma_model') or self.gemma_model is None:
-            raise ValueError("Gemma model not available for embedding generation. Please provide gemma_weights_dir.")
+            if self.gemma_weights_dir:
+                self._initialize_gemma_model()
+            else:
+                raise ValueError("Gemma model not available for embedding generation. Please provide gemma_weights_dir.")
 
         embeddings = []
 
