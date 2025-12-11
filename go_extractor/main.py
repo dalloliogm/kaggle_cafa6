@@ -10,6 +10,10 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
+
+            import obonet
+
+
 import pandas as pd
 import numpy as np
 import torch
@@ -201,7 +205,6 @@ class SimpleGOExtractor:
         except Exception as e:
             logger.error(f"Error loading OBO file with owlready2: {e}")
             logger.info("Trying alternative OBO parsing with obonet...")
-            import obonet
             go_graph = obonet.read_obo(str(obo_path))
             # Create a simple in-memory ontology structure that mimics owlready2 classes
             from collections import namedtuple
