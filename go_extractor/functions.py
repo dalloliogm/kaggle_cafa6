@@ -2,6 +2,10 @@
 Convenience functions for GO extractor.
 """
 
+import os
+# Suppress tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from typing import Dict, Any, Optional
 
 def extract_go_embeddings(

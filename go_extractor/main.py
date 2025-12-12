@@ -3,6 +3,10 @@
 Main module for Simple GO Embeddings Extractor.
 """
 
+import os
+# Suppress tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 import json
 import logging
 import warnings
@@ -199,11 +203,11 @@ class SimpleGOExtractor:
         try:
             onto = get_ontology(str(obo_path)).load()
         except Exception as e:
-            logger.warning(f"Error loading OBO file with owlready2: {e}")
-            logger.info("Trying alternative OBO parsing with obonet...")
+            # Try alternative OBO parsing with obonet
             try:
                 import obonet
                 go_graph = obonet.read_obo(str(obo_path))
+                logger.info("Successfully loaded OBO file using obonet fallback")
             except ImportError:
                 logger.error("obonet not available and owlready2 failed. Cannot parse OBO file.")
                 raise e
@@ -358,7 +362,7 @@ class SimpleGOExtractor:
             if hasattr(self, 'gemma_model') and self.gemma_model is not None and hasattr(self, 'gemma_tokenizer') and self.gemma_tokenizer is not None:
                 # Use transformers-based Gemma model
                 input_ids = self.gemma_tokenizer(prompt, return_tensors="pt").to(self.gemma_model.device)
-                outputs = self.gemma_model.generate(**input_ids, max_length=500)
+                outputs = self.gemma_model.generate(**input_ids, max_new_tokens=500)
                 response_text = self.gemma_tokenizer.decode(outputs[0], skip_special_tokens=True)
                 response_text = response_text.strip()
 
@@ -404,7 +408,7 @@ class SimpleGOExtractor:
 
                 # Generate embedding using transformers Gemma
                 input_ids = self.gemma_tokenizer(embedding_prompt, return_tensors="pt").to(self.gemma_model.device)
-                outputs = self.gemma_model.generate(**input_ids, max_length=768)
+                outputs = self.gemma_model.generate(**input_ids, max_new_tokens=768)
 
                 # Decode the output
                 response_text = self.gemma_tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
