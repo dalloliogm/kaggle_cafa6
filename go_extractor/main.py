@@ -10,10 +10,6 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-
-            import obonet
-
-
 import pandas as pd
 import numpy as np
 import torch
@@ -203,9 +199,14 @@ class SimpleGOExtractor:
         try:
             onto = get_ontology(str(obo_path)).load()
         except Exception as e:
-            logger.error(f"Error loading OBO file with owlready2: {e}")
+            logger.warning(f"Error loading OBO file with owlready2: {e}")
             logger.info("Trying alternative OBO parsing with obonet...")
-            go_graph = obonet.read_obo(str(obo_path))
+            try:
+                import obonet
+                go_graph = obonet.read_obo(str(obo_path))
+            except ImportError:
+                logger.error("obonet not available and owlready2 failed. Cannot parse OBO file.")
+                raise e
             # Create a simple in-memory ontology structure that mimics owlready2 classes
             from collections import namedtuple
             GOClass = namedtuple('GOClass', ['iri', 'label', 'IAO_0000115', 'namespace', 'hasExactSynonym', 'is_a', 'db_xref', 'comment', 'is_obsolete'])
@@ -356,7 +357,7 @@ class SimpleGOExtractor:
             # Generate description using LLM
             if hasattr(self, 'gemma_model') and self.gemma_model is not None and hasattr(self, 'gemma_tokenizer') and self.gemma_tokenizer is not None:
                 # Use transformers-based Gemma model
-                input_ids = self.gemma_tokenizer(prompt, return_tensors="pt").to(self.gemma_device)
+                input_ids = self.gemma_tokenizer(prompt, return_tensors="pt").to(self.gemma_model.device)
                 outputs = self.gemma_model.generate(**input_ids, max_length=500)
                 response_text = self.gemma_tokenizer.decode(outputs[0], skip_special_tokens=True)
                 response_text = response_text.strip()
@@ -402,7 +403,7 @@ class SimpleGOExtractor:
                 embedding_prompt = f"Generate embedding for: {description}"
 
                 # Generate embedding using transformers Gemma
-                input_ids = self.gemma_tokenizer(embedding_prompt, return_tensors="pt").to(self.gemma_device)
+                input_ids = self.gemma_tokenizer(embedding_prompt, return_tensors="pt").to(self.gemma_model.device)
                 outputs = self.gemma_model.generate(**input_ids, max_length=768)
 
                 # Decode the output
