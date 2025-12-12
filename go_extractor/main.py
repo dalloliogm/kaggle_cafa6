@@ -362,8 +362,20 @@ class SimpleGOExtractor:
             if hasattr(self, 'gemma_model') and self.gemma_model is not None and hasattr(self, 'gemma_tokenizer') and self.gemma_tokenizer is not None:
                 # Use transformers-based Gemma model
                 input_ids = self.gemma_tokenizer(prompt, return_tensors="pt").to(self.gemma_model.device)
-                outputs = self.gemma_model.generate(**input_ids, max_new_tokens=500)
-                response_text = self.gemma_tokenizer.decode(outputs[0], skip_special_tokens=True)
+                input_length = input_ids['input_ids'].shape[1]
+
+                outputs = self.gemma_model.generate(
+                    **input_ids,
+                    max_new_tokens=500,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.9,
+                    pad_token_id=self.gemma_tokenizer.eos_token_id
+                )
+
+                # Extract only the generated part (exclude the input prompt)
+                generated_ids = outputs[0][input_length:]
+                response_text = self.gemma_tokenizer.decode(generated_ids, skip_special_tokens=True)
                 response_text = response_text.strip()
 
             elif hasattr(self.llm_model, 'generate'):
@@ -408,10 +420,20 @@ class SimpleGOExtractor:
 
                 # Generate embedding using transformers Gemma
                 input_ids = self.gemma_tokenizer(embedding_prompt, return_tensors="pt").to(self.gemma_model.device)
-                outputs = self.gemma_model.generate(**input_ids, max_new_tokens=768)
+                input_length = input_ids['input_ids'].shape[1]
 
-                # Decode the output
-                response_text = self.gemma_tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+                outputs = self.gemma_model.generate(
+                    **input_ids,
+                    max_new_tokens=768,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.9,
+                    pad_token_id=self.gemma_tokenizer.eos_token_id
+                )
+
+                # Extract only the generated part (exclude the input prompt)
+                generated_ids = outputs[0][input_length:]
+                response_text = self.gemma_tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
 
                 # Convert output to numerical embedding using hash-based approach
                 # This is a simplified approach - may need refinement
